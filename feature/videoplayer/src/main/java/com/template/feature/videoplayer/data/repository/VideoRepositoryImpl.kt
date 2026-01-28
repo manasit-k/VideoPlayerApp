@@ -16,7 +16,7 @@ import java.io.File
 import javax.inject.Inject
 
 class VideoRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context
 ) : VideoRepository {
 
     override fun getAllVideos(): Flow<ApiResult<List<VideoItem>>> = flow {

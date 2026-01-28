@@ -33,8 +33,14 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
           
+    - name: Clean build
+      run: ./gradlew clean --no-daemon
+      
+    - name: Stop any running Gradle daemons
+      run: ./gradlew --stop || true
+      
     - name: Build with Gradle
-      run: ./gradlew build --no-daemon
+      run: ./gradlew build --no-daemon --stacktrace
       
     - name: Run tests
       run: ./gradlew test --no-daemon
@@ -43,8 +49,11 @@ jobs:
       run: ./gradlew lint --no-daemon
       continue-on-error: true
       
+    - name: Stop Gradle daemons before APK build
+      run: ./gradlew --stop || true
+      
     - name: Build APK
-      run: ./gradlew assembleDebug --no-daemon
+      run: ./gradlew assembleDebug --no-daemon --stacktrace
       
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
