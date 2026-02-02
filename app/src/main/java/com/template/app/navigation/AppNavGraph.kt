@@ -7,7 +7,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.toRoute
 import com.template.core.navigation.Route
-import com.template.feature.dashboard.presentation.DashboardScreen
 import com.template.feature.videoplayer.presentation.gallery.VideoGalleryScreen
 import com.template.feature.videoplayer.presentation.VideoPlayerScreen
 
@@ -51,9 +50,7 @@ fun AppNavGraph(
                 }
             )
         }
-        
-        // ... (Dashboard routes)
-        
+
         composable<Route.VideoPlayer> { backStackEntry ->
             val route: Route.VideoPlayer = backStackEntry.toRoute()
             VideoPlayerScreen(

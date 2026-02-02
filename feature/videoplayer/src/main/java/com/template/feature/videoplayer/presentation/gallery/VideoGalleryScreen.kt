@@ -268,14 +268,14 @@ private fun VideoGridView(
     onVideoClick: (VideoItem) -> Unit
 ) {
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(4),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         folders.forEach { (folderName, videos) ->
-            item(span = { GridItemSpan(2) }) {
+            item(span = { GridItemSpan(4) }) {
                 Text(
                     text = folderName,
                     style = MaterialTheme.typography.titleLarge,
@@ -345,7 +345,7 @@ fun VideoItemRow(video: VideoItem, onClick: () -> Unit) {
                 Text(
                     text = video.name,
                     style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -411,7 +411,7 @@ fun VideoItemGrid(video: VideoItem, onClick: () -> Unit) {
                 Text(
                     text = video.name,
                     style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Start
                 )

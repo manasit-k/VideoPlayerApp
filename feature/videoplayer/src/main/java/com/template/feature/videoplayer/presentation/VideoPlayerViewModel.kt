@@ -21,12 +21,16 @@ import javax.inject.Inject
 data class PlayerUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
-    val isShuffleEnabled: Boolean = false,
+    val isShuffleEnabled: Boolean = true,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val playbackSpeed: Float = 1.0f,
     val currentVideoTitle: String = "",
     val isPlaying: Boolean = false,
-    val autoPlayEnabled: Boolean = true
+    val autoPlayEnabled: Boolean = true,
+    val currentPositionMs: Long = 0L,
+    val durationMs: Long = 0L,
+    val isSeekDragging: Boolean = false,
+    val seekDragDeltaMs: Long = 0L
 )
 
 @HiltViewModel
@@ -258,5 +262,17 @@ class VideoPlayerViewModel @Inject constructor(
 
     fun clearError() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    fun updatePlaybackState(positionMs: Long, durationMs: Long) {
+        _uiState.update {
+            it.copy(currentPositionMs = positionMs, durationMs = durationMs)
+        }
+    }
+
+    fun setSeekDragState(isDragging: Boolean, deltaMs: Long = 0L) {
+        _uiState.update {
+            it.copy(isSeekDragging = isDragging, seekDragDeltaMs = deltaMs)
+        }
     }
 }

@@ -2,26 +2,16 @@ package com.template.feature.videoplayer.presentation
 
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Shuffle
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,7 +24,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.clip
+import kotlinx.coroutines.delay
 import android.view.LayoutInflater
+import android.widget.TextView
 import androidx.compose.ui.viewinterop.AndroidView
 import com.template.feature.videoplayer.R
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -42,7 +35,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 
@@ -62,6 +54,14 @@ fun VideoPlayerScreen(
             viewModel.initializePlayerWithUri(videoUri)
         } else {
             viewModel.initializePlayer(startVideoId, folderName)
+        }
+    }
+
+    LaunchedEffect(player) {
+        val p = player ?: return@LaunchedEffect
+        while (true) {
+            delay(200)
+            viewModel.updatePlaybackState(p.currentPosition, p.duration.coerceAtLeast(0L))
         }
     }
 
@@ -95,7 +95,6 @@ fun VideoPlayerScreen(
                         val inflater = LayoutInflater.from(ctx)
                         (inflater.inflate(R.layout.player_view, null) as PlayerView).apply {
                             this.player = exoPlayer
-                            // Force layout to ensure surface is attached for vertical videos
                             post {
                                 requestLayout()
                                 invalidate()
@@ -106,100 +105,86 @@ fun VideoPlayerScreen(
                         if (playerView.player != exoPlayer) {
                             playerView.player = exoPlayer
                         }
+                        // ผูกปุ่ม Auto-play ใน custom controller
+                        playerView.findViewById<TextView>(R.id.exo_auto_play)?.let { autoPlayView ->
+                            autoPlayView.text = if (uiState.autoPlayEnabled) "Auto-play ON" else "Auto-play OFF"
+                            autoPlayView.setOnClickListener { viewModel.toggleAutoPlay() }
+                        }
                     },
                     modifier = Modifier
                         .fillMaxSize()
                         .pointerInput(Unit) {
-                            detectHorizontalDragGestures { change, dragAmount ->
-                                val sensitivity = 100L
-                                val seekAmount = (dragAmount * sensitivity).toLong()
-                                viewModel.seek(seekAmount)
-                                change.consume()
-                            }
+                            var cumulativeDragMs = 0L
+                            detectHorizontalDragGestures(
+                                onDragStart = {
+                                    cumulativeDragMs = 0L
+                                    viewModel.setSeekDragState(isDragging = true, deltaMs = 0L)
+                                },
+                                onDragEnd = {
+                                    viewModel.setSeekDragState(isDragging = false, deltaMs = 0L)
+                                },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    val sensitivity = 25L
+                                    val seekAmount = (dragAmount * sensitivity).toLong()
+                                    cumulativeDragMs += seekAmount
+                                    viewModel.seek(seekAmount)
+                                    viewModel.setSeekDragState(isDragging = true, deltaMs = cumulativeDragMs)
+                                    change.consume()
+                                }
+                            )
                         }
                 )
             }
         }
-        
-        
-        // Top controls overlay
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.End,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Auto-play switch
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+
+        // Seek bar overlay ตอนลากนิ้ว (ไว้ด้านล่างเหนือแถบควบคุม ไม่ทับปุ่มกลาง)
+        if (uiState.isSeekDragging) {
+            Box(
                 modifier = Modifier
-                    .background(
-                        Color.Black.copy(alpha = 0.5f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .clickable { viewModel.toggleAutoPlay() }
-                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(0.9f)
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 72.dp)
             ) {
-                Text(
-                    text = "Auto-play",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White
+                // พื้นหลัง bar
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(Color.White.copy(alpha = 0.3f))
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                if (uiState.autoPlayEnabled) {
-                    Text("ON", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall)
-                } else {
-                    Text("OFF", color = Color.Gray, style = MaterialTheme.typography.labelSmall)
-                }
-            }
-
-            // Playback Controls Row (Shuffle & Repeat)
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Shuffle Button
+                // ความคืบหน้าตามตำแหน่งปัจจุบัน
+                val duration = uiState.durationMs.coerceAtLeast(1L)
+                val progress = (uiState.currentPositionMs.toFloat() / duration).coerceIn(0f, 1f)
                 Box(
                     modifier = Modifier
-                        .background(
-                            if (uiState.isShuffleEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f) 
-                            else Color.Black.copy(alpha = 0.5f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { viewModel.toggleShuffle() }
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Shuffle,
-                        contentDescription = "Shuffle",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
+                        .fillMaxWidth(progress)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+                // ข้อความ +/- วินาทีที่ลาก
+                val deltaSec = uiState.seekDragDeltaMs / 1000f
+                val deltaText = when {
+                    deltaSec > 0 -> "+%.1fs".format(deltaSec)
+                    deltaSec < 0 -> "%.1fs".format(deltaSec)
+                    else -> ""
                 }
-
-                // Repeat Button
-                Box(
-                    modifier = Modifier
-                        .background(
-                            if (uiState.repeatMode != Player.REPEAT_MODE_OFF) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                            else Color.Black.copy(alpha = 0.5f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable { viewModel.toggleRepeatMode() }
-                        .padding(8.dp)
-                ) {
-                    Icon(
-                        imageVector = when (uiState.repeatMode) {
-                            Player.REPEAT_MODE_ONE -> Icons.Default.RepeatOne
-                            else -> Icons.Default.Repeat
-                        },
-                        contentDescription = "Repeat",
-                        tint = if (uiState.repeatMode == Player.REPEAT_MODE_OFF) Color.Gray else Color.White,
-                        modifier = Modifier.size(20.dp)
+                if (deltaText.isNotEmpty()) {
+                    Text(
+                        text = deltaText,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
             }
         }
+
     }
 }
 

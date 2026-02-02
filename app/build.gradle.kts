@@ -65,7 +65,6 @@ dependencies {
     implementation(project(":core:navigation"))
     
     // Feature Modules
-    implementation(project(":feature:dashboard"))
     implementation(project(":feature:videoplayer"))
     
     implementation(libs.androidx.core.ktx)

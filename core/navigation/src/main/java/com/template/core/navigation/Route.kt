@@ -7,14 +7,7 @@ import kotlinx.serialization.Serializable
  * Each route is a sealed class with @Serializable annotation
  */
 sealed interface Route {
-    
-    @Serializable
-    data object Dashboard : Route
-    
-    @Serializable
-    data class DashboardDetail(val id: String) : Route
-    
-    // Add more routes as needed
+
     @Serializable
     data class VideoPlayer(val startVideoId: Long, val folderName: String) : Route
 
