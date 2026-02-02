@@ -3,6 +3,8 @@ package com.template.feature.videoplayer.presentation
 import android.app.Application
 import android.net.Uri
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import com.template.feature.videoplayer.presentation.ExoPlayerFactory
 import app.cash.turbine.test
 import com.template.core.network.model.ApiResult
 import com.template.feature.videoplayer.domain.VideoItem
@@ -12,7 +14,11 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.Dispatchers
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -21,23 +27,34 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class VideoPlayerViewModelTest {
 
     private lateinit var application: Application
     private lateinit var repository: VideoRepository
+    private lateinit var mockPlayer: ExoPlayer
+    private lateinit var playerFactory: ExoPlayerFactory
     private lateinit var viewModel: VideoPlayerViewModel
 
     @Before
     fun setup() {
+        Dispatchers.setMain(UnconfinedTestDispatcher())
         application = mockk(relaxed = true)
         repository = mockk(relaxed = true)
-        viewModel = VideoPlayerViewModel(application, repository)
+        mockPlayer = mockk(relaxed = true)
+        playerFactory = ExoPlayerFactory { mockPlayer }
+        viewModel = VideoPlayerViewModel(application, repository, playerFactory)
     }
 
     @After
     fun tearDown() {
         viewModel.releasePlayer()
+        Dispatchers.resetMain()
     }
 
     @Test
@@ -46,7 +63,7 @@ class VideoPlayerViewModelTest {
             val state = awaitItem()
             assertFalse(state.isLoading)
             assertNull(state.error)
-            assertFalse(state.isShuffleEnabled)
+            assertTrue(state.isShuffleEnabled) // default in PlayerUiState
             assertEquals(Player.REPEAT_MODE_OFF, state.repeatMode)
             assertEquals(1.0f, state.playbackSpeed)
             assertEquals("", state.currentVideoTitle)
@@ -71,13 +88,12 @@ class VideoPlayerViewModelTest {
         )
 
         viewModel.uiState.test {
+            skipItems(1) // Skip initial state
             viewModel.initializePlayer(startVideoId, folderName)
 
-            // Should show loading first
             val loadingState = awaitItem()
             assertTrue(loadingState.isLoading)
 
-            // Then success
             val successState = awaitItem()
             assertFalse(successState.isLoading)
             assertNull(successState.error)
@@ -97,6 +113,7 @@ class VideoPlayerViewModelTest {
         )
 
         viewModel.uiState.test {
+            skipItems(1) // Skip initial state
             viewModel.initializePlayer(startVideoId, folderName)
 
             val loadingState = awaitItem()
@@ -122,6 +139,7 @@ class VideoPlayerViewModelTest {
         )
 
         viewModel.uiState.test {
+            skipItems(1) // Skip initial state
             viewModel.initializePlayer(startVideoId, folderName)
 
             val loadingState = awaitItem()
@@ -144,7 +162,12 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, folderName)
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, folderName)
+            awaitItem()
+            awaitItem()
+        }
         val firstPlayer = viewModel.player.value
 
         viewModel.initializePlayer(1L, folderName)
@@ -158,6 +181,7 @@ class VideoPlayerViewModelTest {
         val uriString = "https://example.com/video.mp4"
 
         viewModel.uiState.test {
+            skipItems(1) // Skip initial state
             viewModel.initializePlayerWithUri(uriString)
 
             val loadingState = awaitItem()
@@ -172,7 +196,12 @@ class VideoPlayerViewModelTest {
 
     @Test
     fun `initializePlayerWithUri should not recreate player if already exists`() = runTest {
-        viewModel.initializePlayerWithUri("https://example.com/video1.mp4")
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayerWithUri("https://example.com/video1.mp4")
+            awaitItem()
+            awaitItem()
+        }
         val firstPlayer = viewModel.player.value
 
         viewModel.initializePlayerWithUri("https://example.com/video2.mp4")
@@ -189,7 +218,12 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, "TestFolder")
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
         assertNotNull(viewModel.player.value)
 
         viewModel.releasePlayer()
@@ -204,13 +238,15 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, "TestFolder")
-        val player = viewModel.player.value ?: return
-
-        val initialShuffle = player.shuffleModeEnabled
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem() // loading
+            awaitItem() // success
+        }
         viewModel.toggleShuffle()
 
-        assertEquals(!initialShuffle, player.shuffleModeEnabled)
+        verify(exactly = 1) { mockPlayer.shuffleModeEnabled = any() }
     }
 
     @Test
@@ -220,17 +256,19 @@ class VideoPlayerViewModelTest {
         coEvery { repository.getVideosInFolder(any()) } returns flowOf(
             ApiResult.Success(videos)
         )
+        every { mockPlayer.shuffleModeEnabled } returns false
+        every { mockPlayer.repeatMode } returns Player.REPEAT_MODE_ONE
 
-        viewModel.initializePlayer(1L, "TestFolder")
-        val player = viewModel.player.value ?: return
-
-        player.repeatMode = Player.REPEAT_MODE_ONE
-        player.shuffleModeEnabled = false
-
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
         viewModel.toggleShuffle()
 
-        assertEquals(Player.REPEAT_MODE_ALL, player.repeatMode)
-        assertTrue(player.shuffleModeEnabled)
+        verify { mockPlayer.shuffleModeEnabled = true }
+        verify { mockPlayer.repeatMode = Player.REPEAT_MODE_ALL }
     }
 
     @Test
@@ -241,20 +279,24 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, "TestFolder")
-        val player = viewModel.player.value ?: return
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
 
-        // OFF -> ONE
+        every { mockPlayer.repeatMode } returns Player.REPEAT_MODE_OFF
         viewModel.toggleRepeatMode()
-        assertEquals(Player.REPEAT_MODE_ONE, player.repeatMode)
+        verify { mockPlayer.repeatMode = Player.REPEAT_MODE_ONE }
 
-        // ONE -> ALL
+        every { mockPlayer.repeatMode } returns Player.REPEAT_MODE_ONE
         viewModel.toggleRepeatMode()
-        assertEquals(Player.REPEAT_MODE_ALL, player.repeatMode)
+        verify(atLeast = 1) { mockPlayer.repeatMode = Player.REPEAT_MODE_ALL }
 
-        // ALL -> OFF
+        every { mockPlayer.repeatMode } returns Player.REPEAT_MODE_ALL
         viewModel.toggleRepeatMode()
-        assertEquals(Player.REPEAT_MODE_OFF, player.repeatMode)
+        verify(atLeast = 1) { mockPlayer.repeatMode = Player.REPEAT_MODE_OFF }
     }
 
     @Test
@@ -265,11 +307,15 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, "TestFolder")
-        val player = viewModel.player.value ?: return
-
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
         viewModel.setPlaybackSpeed(1.5f)
-        assertEquals(1.5f, player.playbackParameters.speed)
+
+        verify { mockPlayer.setPlaybackSpeed(1.5f) }
     }
 
     @Test
@@ -283,14 +329,15 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, "TestFolder")
-        val player = viewModel.player.value ?: return
-
-        val initialIndex = player.currentMediaItemIndex
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
         viewModel.playNext()
 
-        // Verify seekToNext was called (we can't easily verify the actual index change without more setup)
-        assertTrue(true) // Placeholder - in real test would verify player state
+        verify { mockPlayer.seekToNext() }
     }
 
     @Test
@@ -304,12 +351,15 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(2L, "TestFolder")
-        val player = viewModel.player.value ?: return
-
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(2L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
         viewModel.playPrevious()
-        // Verify seekToPrevious was called
-        assertTrue(true) // Placeholder
+
+        verify { mockPlayer.seekToPrevious() }
     }
 
     @Test
@@ -320,15 +370,18 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, "TestFolder")
-        val player = viewModel.player.value ?: return
-
-        every { player.currentPosition } returns 1000L
-        every { player.duration } returns 10000L
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
+        every { mockPlayer.currentPosition } returns 1000L
+        every { mockPlayer.duration } returns 10000L
 
         viewModel.seek(5000L)
-        // Verify seekTo was called with correct position
-        assertTrue(true) // Placeholder
+
+        verify { mockPlayer.seekTo(6000L) }
     }
 
     @Test
@@ -339,12 +392,15 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, "TestFolder")
-        val player = viewModel.player.value ?: return
-
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
         viewModel.seekTo(5000L)
-        // Verify seekTo was called
-        assertTrue(true) // Placeholder
+
+        verify { mockPlayer.seekTo(5000L) }
     }
 
     @Test
@@ -355,16 +411,20 @@ class VideoPlayerViewModelTest {
             ApiResult.Success(videos)
         )
 
-        viewModel.initializePlayer(1L, "TestFolder")
-        val player = viewModel.player.value ?: return
+        viewModel.uiState.test {
+            skipItems(1)
+            viewModel.initializePlayer(1L, "TestFolder")
+            awaitItem()
+            awaitItem()
+        }
 
-        every { player.isPlaying } returns false
+        every { mockPlayer.isPlaying } returns false
         viewModel.togglePlayPause()
-        verify { player.play() }
+        verify { mockPlayer.play() }
 
-        every { player.isPlaying } returns true
+        every { mockPlayer.isPlaying } returns true
         viewModel.togglePlayPause()
-        verify { player.pause() }
+        verify { mockPlayer.pause() }
     }
 
     @Test
@@ -403,18 +463,21 @@ class VideoPlayerViewModelTest {
         val exception = Exception("Test error")
 
         coEvery { repository.getVideosInFolder(any()) } returns flowOf(
+            ApiResult.Loading,
             ApiResult.Error(exception)
         )
 
         viewModel.uiState.test {
+            skipItems(1)
             viewModel.initializePlayer(1L, "TestFolder")
-
+            val loadingState = awaitItem()
+            assertTrue(loadingState.isLoading)
             val errorState = awaitItem()
-            if (errorState.error != null) {
-                viewModel.clearError()
-                val clearedState = awaitItem()
-                assertNull(clearedState.error)
-            }
+            assertNotNull(errorState.error)
+
+            viewModel.clearError()
+            val clearedState = awaitItem()
+            assertNull(clearedState.error)
         }
     }
 

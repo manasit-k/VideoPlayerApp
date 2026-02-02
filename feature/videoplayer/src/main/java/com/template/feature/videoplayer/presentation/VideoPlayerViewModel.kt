@@ -36,7 +36,8 @@ data class PlayerUiState(
 @HiltViewModel
 class VideoPlayerViewModel @Inject constructor(
     private val application: Application,
-    private val repository: VideoRepository
+    private val repository: VideoRepository,
+    private val playerFactory: ExoPlayerFactory
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
@@ -127,7 +128,7 @@ class VideoPlayerViewModel @Inject constructor(
 
                         val startIndex = videos.indexOfFirst { it.id == startVideoId }.coerceAtLeast(0)
 
-                        _player.value = ExoPlayer.Builder(application).build().apply {
+                        _player.value = playerFactory.create().apply {
                             addListener(playerListener)
                             val mediaItems = videos.map { video ->
                                 MediaItem.Builder()
@@ -167,7 +168,7 @@ class VideoPlayerViewModel @Inject constructor(
 
         _uiState.update { it.copy(isLoading = true, error = null) }
 
-        _player.value = ExoPlayer.Builder(application).build().apply {
+        _player.value = playerFactory.create().apply {
             addListener(playerListener)
             setMediaItem(MediaItem.fromUri(uriString))
             prepare()
