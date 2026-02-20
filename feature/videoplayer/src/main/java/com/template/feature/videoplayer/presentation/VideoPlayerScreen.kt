@@ -12,6 +12,14 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,8 +29,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.delay
@@ -44,6 +54,7 @@ fun VideoPlayerScreen(
     startVideoId: Long = -1,
     folderName: String = "",
     videoUri: String? = null,
+    onNavigateUp: () -> Unit = {},
     viewModel: VideoPlayerViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -82,6 +93,7 @@ fun VideoPlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .background(Color.Black)
             .windowInsetsPadding(WindowInsets.systemBars)
     ) {
         // Player View - use key to force recreation when player becomes available
@@ -95,6 +107,7 @@ fun VideoPlayerScreen(
                         val inflater = LayoutInflater.from(ctx)
                         (inflater.inflate(R.layout.player_view, null) as PlayerView).apply {
                             this.player = exoPlayer
+                            this.keepScreenOn = true
                             post {
                                 requestLayout()
                                 invalidate()
@@ -115,9 +128,11 @@ fun VideoPlayerScreen(
                         .fillMaxSize()
                         .pointerInput(Unit) {
                             var cumulativeDragMs = 0L
+                            var startPositionMs = 0L
                             detectHorizontalDragGestures(
                                 onDragStart = {
                                     cumulativeDragMs = 0L
+                                    startPositionMs = exoPlayer.currentPosition
                                     viewModel.setSeekDragState(isDragging = true, deltaMs = 0L)
                                 },
                                 onDragEnd = {
@@ -127,7 +142,9 @@ fun VideoPlayerScreen(
                                     val sensitivity = 25L
                                     val seekAmount = (dragAmount * sensitivity).toLong()
                                     cumulativeDragMs += seekAmount
-                                    viewModel.seek(seekAmount)
+                                    val targetPosition = (startPositionMs + cumulativeDragMs)
+                                        .coerceIn(0L, exoPlayer.duration.coerceAtLeast(0L))
+                                    viewModel.seekTo(targetPosition)
                                     viewModel.setSeekDragState(isDragging = true, deltaMs = cumulativeDragMs)
                                     change.consume()
                                 }
@@ -135,6 +152,56 @@ fun VideoPlayerScreen(
                         }
                 )
             }
+        }
+
+        // Top Bar Overlay
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)
+                    )
+                )
+                .padding(horizontal = 8.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onNavigateUp) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = uiState.currentVideoTitle,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // Loading State
+        if (uiState.isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        // Error State
+        uiState.error?.let { errorMessage ->
+            Text(
+                text = errorMessage,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .background(Color.Red.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                    .padding(16.dp)
+            )
         }
 
         // Seek bar overlay ตอนลากนิ้ว (ไว้ด้านล่างเหนือแถบควบคุม ไม่ทับปุ่มกลาง)

@@ -46,6 +46,8 @@ class VideoPlayerViewModel @Inject constructor(
     private val _player = MutableStateFlow<ExoPlayer?>(null)
     val player: StateFlow<ExoPlayer?> = _player.asStateFlow()
 
+    private var initJob: kotlinx.coroutines.Job? = null
+
     private val playerListener = object : Player.Listener {
         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             _uiState.update { it.copy(isShuffleEnabled = shuffleModeEnabled) }
@@ -113,7 +115,8 @@ class VideoPlayerViewModel @Inject constructor(
 
         _uiState.update { it.copy(isLoading = true, error = null) }
 
-        viewModelScope.launch {
+        initJob?.cancel()
+        initJob = viewModelScope.launch {
             repository.getVideosInFolder(folderName).collect { result ->
                 when (result) {
                     is ApiResult.Loading -> {
@@ -127,6 +130,9 @@ class VideoPlayerViewModel @Inject constructor(
                         }
 
                         val startIndex = videos.indexOfFirst { it.id == startVideoId }.coerceAtLeast(0)
+
+                        // Clean up any stale player instance just in case
+                        _player.value?.release()
 
                         _player.value = playerFactory.create().apply {
                             addListener(playerListener)
@@ -166,8 +172,11 @@ class VideoPlayerViewModel @Inject constructor(
     fun initializePlayerWithUri(uriString: String) {
         if (_player.value != null) return
 
+        initJob?.cancel()
+
         _uiState.update { it.copy(isLoading = true, error = null) }
 
+        _player.value?.release()
         _player.value = playerFactory.create().apply {
             addListener(playerListener)
             setMediaItem(MediaItem.fromUri(uriString))
@@ -180,6 +189,7 @@ class VideoPlayerViewModel @Inject constructor(
     }
 
     fun releasePlayer() {
+        initJob?.cancel()
         _player.value?.removeListener(playerListener)
         _player.value?.release()
         _player.value = null
